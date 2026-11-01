@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Aluminium Calculator"
+rootProject.name = "AluCraft"
 
 include(":app")

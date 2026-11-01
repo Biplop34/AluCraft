@@ -122,7 +122,7 @@ fun ThaiFabricationScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "Thai Fabrication Tool",
+                                    text = "AluCraft",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary

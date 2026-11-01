@@ -45,7 +45,7 @@ fun HubScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Aluminium Calculator",
+                                text = "AluCraft",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.primary

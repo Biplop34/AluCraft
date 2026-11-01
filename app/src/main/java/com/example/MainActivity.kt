@@ -7,11 +7,14 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.backup.BackupManager
 import android.content.ContentValues
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfDocument
+import android.graphics.RectF
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Build
@@ -601,6 +604,7 @@ class MainActivity : ComponentActivity() {
                         allowUniversalAccessFromFileURLs = true
                         loadWithOverviewMode = true
                         useWideViewPort = true
+                        setSupportZoom(false)
                         displayZoomControls = false
                         builtInZoomControls = false
                         cacheMode = WebSettings.LOAD_DEFAULT
@@ -884,6 +888,251 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun saveImageQuiet(base64Data: String, fileName: String): Boolean {
             return saveImageInternal(base64Data, fileName, showSuccessToast = false)
+        }
+
+        @JavascriptInterface
+        fun saveInvoiceImages(pagesJson: String, fileName: String): Boolean {
+            return try {
+                val pages = JSONArray(pagesJson)
+                if (pages.length() == 0) return false
+                val baseName = invoiceSafeBaseName(fileName)
+                for (index in 0 until pages.length()) {
+                    val bytes = decodeInvoiceImage(pages.getString(index))
+                    saveInvoiceDownload(bytes, "$baseName.jpg", "image/jpeg")
+                        ?: throw IllegalStateException("Could not create invoice image")
+                }
+                showInvoiceToast("Invoice image saved to Downloads/Kolma Thai Invoices")
+                true
+            } catch (e: Exception) {
+                Log.e("AlumCalcWeb", "Could not save invoice images", e)
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun saveInvoicePdf(pagesJson: String, fileName: String): Boolean {
+            return try {
+                val bytes = createInvoicePdf(pagesJson)
+                val safeName = invoiceSafeBaseName(fileName).let {
+                    if (it.endsWith(".pdf", ignoreCase = true)) it else "$it.pdf"
+                }
+                saveInvoiceDownload(bytes, safeName, "application/pdf")
+                    ?: throw IllegalStateException("Could not create invoice PDF")
+                showInvoiceToast("Invoice PDF saved to Downloads/Kolma Thai Invoices")
+                true
+            } catch (e: Exception) {
+                Log.e("AlumCalcWeb", "Could not save invoice PDF", e)
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun shareInvoiceImages(pagesJson: String, fileName: String): Boolean {
+            return try {
+                val pages = JSONArray(pagesJson)
+                if (pages.length() == 0) return false
+                val baseName = invoiceSafeBaseName(fileName)
+                val uris = ArrayList<Uri>(pages.length())
+                for (index in 0 until pages.length()) {
+                    val bytes = decodeInvoiceImage(pages.getString(index))
+                    uris.add(saveInvoiceDownload(bytes, "$baseName.jpg", "image/jpeg")
+                        ?: throw IllegalStateException("Could not prepare invoice image"))
+                }
+                launchInvoiceShare(uris, "image/jpeg", baseName)
+                true
+            } catch (e: Exception) {
+                Log.e("AlumCalcWeb", "Could not share invoice images", e)
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun shareInvoicePdf(pagesJson: String, fileName: String): Boolean {
+            return try {
+                val baseName = invoiceSafeBaseName(fileName)
+                val safeName = if (baseName.endsWith(".pdf", ignoreCase = true)) baseName else "$baseName.pdf"
+                val uri = saveInvoiceDownload(createInvoicePdf(pagesJson), safeName, "application/pdf")
+                    ?: throw IllegalStateException("Could not prepare invoice PDF")
+                launchInvoiceShare(arrayListOf(uri), "application/pdf", safeName)
+                true
+            } catch (e: Exception) {
+                Log.e("AlumCalcWeb", "Could not share invoice PDF", e)
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun saveBillingPdf(imageDataUrl: String, fileName: String): Boolean {
+            return try {
+                val baseName = invoiceSafeBaseName(fileName)
+                val safeName = if (baseName.endsWith(".pdf", ignoreCase = true)) baseName else "$baseName.pdf"
+                saveInvoiceDownload(createBillingPdf(imageDataUrl), safeName, "application/pdf")
+                    ?: throw IllegalStateException("Could not create billing PDF")
+                showInvoiceToast("Billing PDF saved to Downloads/Kolma Thai Invoices")
+                true
+            } catch (e: Exception) {
+                Log.e("AlumCalcWeb", "Could not save billing PDF", e)
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun shareBillingImage(imageDataUrl: String, fileName: String): Boolean {
+            return try {
+                val baseName = invoiceSafeBaseName(fileName)
+                val safeName = if (baseName.endsWith(".png", ignoreCase = true)) baseName else "$baseName.png"
+                val uri = saveInvoiceDownload(decodeInvoiceImage(imageDataUrl), safeName, "image/png")
+                    ?: throw IllegalStateException("Could not prepare billing image")
+                launchInvoiceShare(arrayListOf(uri), "image/png", baseName)
+                true
+            } catch (e: Exception) {
+                Log.e("AlumCalcWeb", "Could not share billing image", e)
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun shareBillingPdf(imageDataUrl: String, fileName: String): Boolean {
+            return try {
+                val baseName = invoiceSafeBaseName(fileName)
+                val safeName = if (baseName.endsWith(".pdf", ignoreCase = true)) baseName else "$baseName.pdf"
+                val uri = saveInvoiceDownload(createBillingPdf(imageDataUrl), safeName, "application/pdf")
+                    ?: throw IllegalStateException("Could not prepare billing PDF")
+                launchInvoiceShare(arrayListOf(uri), "application/pdf", baseName)
+                true
+            } catch (e: Exception) {
+                Log.e("AlumCalcWeb", "Could not share billing PDF", e)
+                false
+            }
+        }
+
+        private fun invoiceSafeBaseName(fileName: String): String {
+            return fileName.substringBeforeLast('.', fileName)
+                .filter { it.code >= 0x20 && it.code != 0x7f }
+                .replace('/', ' ')
+                .replace('\\', ' ')
+                .replace(':', ' ')
+                .replace('*', ' ')
+                .replace('?', ' ')
+                .replace('"', ' ')
+                .replace('<', ' ')
+                .replace('>', ' ')
+                .replace('|', ' ')
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .trimEnd('.')
+                .ifBlank { "Customer" }
+        }
+        private fun decodeInvoiceImage(dataUrl: String): ByteArray {
+            val encoded = dataUrl.substringAfter(',', dataUrl)
+            return Base64.decode(encoded, Base64.DEFAULT)
+        }
+
+        private fun createInvoicePdf(pagesJson: String): ByteArray {
+            val pages = JSONArray(pagesJson)
+            require(pages.length() > 0) { "Invoice has no pages" }
+            val document = PdfDocument()
+            try {
+                for (index in 0 until pages.length()) {
+                    val bitmapBytes = decodeInvoiceImage(pages.getString(index))
+                    val bitmap = BitmapFactory.decodeByteArray(bitmapBytes, 0, bitmapBytes.size)
+                        ?: throw IllegalArgumentException("Invoice page image is invalid")
+                    try {
+                        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, index + 1).create()
+                        val page = document.startPage(pageInfo)
+                        page.canvas.drawBitmap(bitmap, null, RectF(0f, 0f, 595f, 842f), null)
+                        document.finishPage(page)
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+                val output = java.io.ByteArrayOutputStream()
+                document.writeTo(output)
+                return output.toByteArray()
+            } finally {
+                document.close()
+            }
+        }
+
+        private fun createBillingPdf(imageDataUrl: String): ByteArray {
+            val bitmapBytes = decodeInvoiceImage(imageDataUrl)
+            val bitmap = BitmapFactory.decodeByteArray(bitmapBytes, 0, bitmapBytes.size)
+                ?: throw IllegalArgumentException("Billing image is invalid")
+            val document = PdfDocument()
+            try {
+                val pageWidth = 595
+                val pageHeight = 842
+                val page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create())
+                val scale = minOf(pageWidth.toFloat() / bitmap.width.toFloat(), pageHeight.toFloat() / bitmap.height.toFloat())
+                val imageWidth = bitmap.width * scale
+                val imageHeight = bitmap.height * scale
+                val left = (pageWidth.toFloat() - imageWidth) / 2f
+                val top = (pageHeight.toFloat() - imageHeight) / 2f
+                page.canvas.drawBitmap(bitmap, null, RectF(left, top, left + imageWidth, top + imageHeight), null)
+                document.finishPage(page)
+                val output = java.io.ByteArrayOutputStream()
+                document.writeTo(output)
+                return output.toByteArray()
+            } finally {
+                document.close()
+                bitmap.recycle()
+            }
+        }
+
+        private fun saveInvoiceDownload(bytes: ByteArray, fileName: String, mimeType: String): Uri? {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Kolma Thai Invoices")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+                try {
+                    resolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
+                        ?: throw IllegalStateException("Could not open invoice file")
+                    val ready = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                    resolver.update(uri, ready, null, null)
+                    return uri
+                } catch (e: Exception) {
+                    resolver.delete(uri, null, null)
+                    throw e
+                }
+            }
+
+            val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Kolma Thai Invoices")
+            if (!directory.exists() && !directory.mkdirs()) return null
+            val outputFile = File(directory, fileName)
+            outputFile.outputStream().use { it.write(bytes) }
+            return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", outputFile)
+        }
+
+        private fun launchInvoiceShare(uris: ArrayList<Uri>, mimeType: String, title: String) {
+            activity.runOnUiThread {
+                try {
+                    val multiple = uris.size > 1
+                    val shareIntent = Intent(if (multiple) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
+                        type = mimeType
+                        if (multiple) putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                        else putExtra(Intent.EXTRA_STREAM, uris.first())
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        clipData = ClipData.newUri(context.contentResolver, "Invoice", uris.first()).apply {
+                            uris.drop(1).forEach { addItem(ClipData.Item(it)) }
+                        }
+                    }
+                    activity.startActivity(Intent.createChooser(shareIntent, "Share $title"))
+                } catch (e: Exception) {
+                    Log.e("AlumCalcWeb", "Could not open invoice share sheet", e)
+                    Toast.makeText(context, "Could not share invoice", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        private fun showInvoiceToast(message: String) {
+            activity.runOnUiThread {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
         }
 
         private fun saveImageInternal(
