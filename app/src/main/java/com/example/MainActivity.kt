@@ -557,6 +557,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun finishWithoutExitTransition() {
+        finish()
+        overridePendingTransition(0, 0)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Composable
     fun AppWebView() {
@@ -565,7 +571,7 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = true) {
             val wv = currentWebView ?: webViewInstance
             if (wv == null) {
-                finish()
+                finishWithoutExitTransition()
                 return@BackHandler
             }
             wv.evaluateJavascript(
@@ -577,7 +583,7 @@ class MainActivity : ComponentActivity() {
                 } else if (wv.canGoBack()) {
                     wv.goBack()
                 } else {
-                    finish()
+                    finishWithoutExitTransition()
                 }
             }
         }
