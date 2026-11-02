@@ -824,17 +824,26 @@ class MainActivity : ComponentActivity() {
                         put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                         put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/AluminiumCalculator")
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/AluCraft")
                             put(MediaStore.MediaColumns.IS_PENDING, 1)
                         }
                     }
 
-                    val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                    val imageUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    } else {
+                        val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "AluCraft")
+                        if (!directory.exists() && !directory.mkdirs()) throw IllegalStateException("Could not create download folder")
+                        val outputFile = File(directory, fileName)
+                        outputFile.outputStream().use { it.write(bytes) }
+                        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", outputFile)
+                    }
                     if (imageUri != null) {
-                        val outputStream: OutputStream? = resolver.openOutputStream(imageUri)
-                        outputStream?.use { it.write(bytes) }
-
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val outputStream: OutputStream? = resolver.openOutputStream(imageUri, "w")
+                            outputStream?.use { it.write(bytes) }
+                                ?: throw IllegalStateException("Could not open report image")
+
                             contentValues.clear()
                             contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
                             resolver.update(imageUri, contentValues, null, null)
@@ -897,17 +906,18 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun saveInvoiceImages(pagesJson: String, fileName: String): Boolean {
+        fun saveInvoiceImages(pagesJson: String, fileName: String, shopName: String): Boolean {
             return try {
                 val pages = JSONArray(pagesJson)
                 if (pages.length() == 0) return false
                 val baseName = invoiceSafeBaseName(fileName)
+                val invoiceFolder = invoiceFolderName(shopName)
                 for (index in 0 until pages.length()) {
                     val bytes = decodeInvoiceImage(pages.getString(index))
-                    saveInvoiceDownload(bytes, "$baseName.jpg", "image/jpeg")
+                    saveInvoiceDownload(bytes, "$baseName.jpg", "image/jpeg", invoiceFolder)
                         ?: throw IllegalStateException("Could not create invoice image")
                 }
-                showInvoiceToast("Invoice image saved to Downloads/Kolma Thai Invoices")
+                showInvoiceToast("Invoice Image Saved To Download Folder")
                 true
             } catch (e: Exception) {
                 Log.e("AlumCalcWeb", "Could not save invoice images", e)
@@ -916,15 +926,15 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun saveInvoicePdf(pagesJson: String, fileName: String): Boolean {
+        fun saveInvoicePdf(pagesJson: String, fileName: String, shopName: String): Boolean {
             return try {
                 val bytes = createInvoicePdf(pagesJson)
                 val safeName = invoiceSafeBaseName(fileName).let {
                     if (it.endsWith(".pdf", ignoreCase = true)) it else "$it.pdf"
                 }
-                saveInvoiceDownload(bytes, safeName, "application/pdf")
+                saveInvoiceDownload(bytes, safeName, "application/pdf", invoiceFolderName(shopName))
                     ?: throw IllegalStateException("Could not create invoice PDF")
-                showInvoiceToast("Invoice PDF saved to Downloads/Kolma Thai Invoices")
+                showInvoiceToast("Invoice PDF Saved To Download Folder")
                 true
             } catch (e: Exception) {
                 Log.e("AlumCalcWeb", "Could not save invoice PDF", e)
@@ -933,15 +943,16 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun shareInvoiceImages(pagesJson: String, fileName: String): Boolean {
+        fun shareInvoiceImages(pagesJson: String, fileName: String, shopName: String): Boolean {
             return try {
                 val pages = JSONArray(pagesJson)
                 if (pages.length() == 0) return false
                 val baseName = invoiceSafeBaseName(fileName)
+                val invoiceFolder = invoiceFolderName(shopName)
                 val uris = ArrayList<Uri>(pages.length())
                 for (index in 0 until pages.length()) {
                     val bytes = decodeInvoiceImage(pages.getString(index))
-                    uris.add(saveInvoiceDownload(bytes, "$baseName.jpg", "image/jpeg")
+                    uris.add(saveInvoiceDownload(bytes, "$baseName.jpg", "image/jpeg", invoiceFolder)
                         ?: throw IllegalStateException("Could not prepare invoice image"))
                 }
                 launchInvoiceShare(uris, "image/jpeg", baseName)
@@ -953,11 +964,11 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun shareInvoicePdf(pagesJson: String, fileName: String): Boolean {
+        fun shareInvoicePdf(pagesJson: String, fileName: String, shopName: String): Boolean {
             return try {
                 val baseName = invoiceSafeBaseName(fileName)
                 val safeName = if (baseName.endsWith(".pdf", ignoreCase = true)) baseName else "$baseName.pdf"
-                val uri = saveInvoiceDownload(createInvoicePdf(pagesJson), safeName, "application/pdf")
+                val uri = saveInvoiceDownload(createInvoicePdf(pagesJson), safeName, "application/pdf", invoiceFolderName(shopName))
                     ?: throw IllegalStateException("Could not prepare invoice PDF")
                 launchInvoiceShare(arrayListOf(uri), "application/pdf", safeName)
                 true
@@ -1029,6 +1040,17 @@ class MainActivity : ComponentActivity() {
                 .trimEnd('.')
                 .ifBlank { "Customer" }
         }
+
+        private fun invoiceFolderName(shopName: String): String {
+            val safeShopName = shopName
+                .filter { it.code >= 0x20 && it.code != 0x7f }
+                .replace(Regex("[\\\\/:*?\"<>|]"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .trimEnd('.')
+                .ifBlank { "Shop" }
+            return "$safeShopName Invoice"
+        }
         private fun decodeInvoiceImage(dataUrl: String): ByteArray {
             val encoded = dataUrl.substringAfter(',', dataUrl)
             return Base64.decode(encoded, Base64.DEFAULT)
@@ -1085,12 +1107,21 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        private fun saveInvoiceDownload(bytes: ByteArray, fileName: String, mimeType: String): Uri? {
+        private fun saveInvoiceDownload(
+            bytes: ByteArray,
+            fileName: String,
+            mimeType: String,
+            invoiceFolder: String? = null
+        ): Uri? {
+            val relativeFolder = buildString {
+                append("AluCraft")
+                if (!invoiceFolder.isNullOrBlank()) append("/").append(invoiceFolder)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                     put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Kolma Thai Invoices")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + relativeFolder)
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
                 val resolver = context.contentResolver
@@ -1107,7 +1138,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Kolma Thai Invoices")
+            val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), relativeFolder)
             if (!directory.exists() && !directory.mkdirs()) return null
             val outputFile = File(directory, fileName)
             outputFile.outputStream().use { it.write(bytes) }
@@ -1153,17 +1184,27 @@ class MainActivity : ComponentActivity() {
                 val resolver = context.contentResolver
                 val contentValues = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, safeFileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                    val isJpeg = safeFileName.endsWith(".jpg", ignoreCase = true) || safeFileName.endsWith(".jpeg", ignoreCase = true)
+                    put(MediaStore.MediaColumns.MIME_TYPE, if (isJpeg) "image/jpeg" else "image/png")
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/AluminiumCalculator")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/AluCraft")
                         put(MediaStore.MediaColumns.IS_PENDING, 1)
                     }
                 }
-                val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                val imageUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                } else {
+                    val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "AluCraft")
+                    if (!directory.exists() && !directory.mkdirs()) return false
+                    val outputFile = File(directory, safeFileName)
+                    outputFile.outputStream().use { it.write(bytes) }
+                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", outputFile)
+                }
                 if (imageUri != null) {
-                    val outputStream = resolver.openOutputStream(imageUri)
-                    outputStream?.use { it.write(bytes) }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val outputStream = resolver.openOutputStream(imageUri, "w")
+                        outputStream?.use { it.write(bytes) }
+                            ?: throw IllegalStateException("Could not open report image")
                         contentValues.clear()
                         contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
                         resolver.update(imageUri, contentValues, null, null)
@@ -1639,7 +1680,7 @@ class MainActivity : ComponentActivity() {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, safeFileName)
                     put(MediaStore.MediaColumns.MIME_TYPE, "application/json")
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/AluCraft")
                         put(MediaStore.MediaColumns.IS_PENDING, 1)
                     }
                 }
@@ -1661,7 +1702,9 @@ class MainActivity : ComponentActivity() {
                     }
                 } else {
                     try {
-                        val targetFile = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), safeFileName)
+                        val downloadDirectory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "AluCraft")
+                        if (!downloadDirectory.exists()) downloadDirectory.mkdirs()
+                        val targetFile = File(downloadDirectory, safeFileName)
                         targetFile.writeBytes(bytes)
                     } catch (_: Exception) {}
                 }

@@ -137,7 +137,9 @@ fun HistoryDialog(
                                     }
 
                                     Text(
-                                        text = dateFormat.format(Date(job.timestamp)),
+                                        text = dateFormat.format(Date(job.timestamp)).replace(
+                                            Regex("\\b(am|pm)\\b", RegexOption.IGNORE_CASE)
+                                        ) { it.value.uppercase(Locale.ROOT) },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

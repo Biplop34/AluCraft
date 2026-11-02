@@ -1,0 +1,7 @@
+build/
+artifacts/
+release/
+**/bin/
+**/obj/
+AluCraft.Setup/Payload.zip
+google-oauth.json

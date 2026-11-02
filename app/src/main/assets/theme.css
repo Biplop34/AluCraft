@@ -14,6 +14,21 @@ input, textarea, [contenteditable="true"] {
   -ms-user-select: text !important;
   user-select: text !important;
   -webkit-touch-callout: default !important;
+  pointer-events: auto !important;
+}
+
+/* Keep numeric fields editable while removing browser spinner arrows everywhere. */
+input[type="number"] {
+  appearance: textfield !important;
+  -moz-appearance: textfield !important;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  display: none !important;
+  margin: 0 !important;
 }
 
 /* Pure Clean Light Mode Styles (Default) */
@@ -24,6 +39,15 @@ input, textarea, [contenteditable="true"] {
 html, body {
   background-color: #f8fafc !important;
   color: #0f172a !important;
+}
+
+/* Keep every current and future app label in consistent Title Case. */
+body, #root, #root * {
+  text-transform: capitalize !important;
+}
+
+input::placeholder, textarea::placeholder {
+  text-transform: capitalize !important;
 }
 
 /* Smooth Scrolling & Polish */
@@ -946,3 +970,10 @@ div[style*="-10000px"] table,
 body :where(*:not(input):not(textarea):not(code):not(pre)) {
   text-transform: capitalize !important;
 }
+/* Match the Invoice Generator delete control across native app detail modals. */
+.invoice-delete-icon{width:42px;height:42px;min-width:42px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid #fecaca;border-radius:14px;background:#fff7f7;color:#b91c1c;font-size:12px;font-weight:850;cursor:pointer;flex-shrink:0}
+.invoice-delete-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* Same touch target and frame as the adjacent delete control, with the existing teal add action styling. */
+.billing-add-icon{width:42px;height:42px;min-width:42px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid #ccfbf1;border-radius:14px;cursor:pointer;flex-shrink:0;transition:transform .15s ease,background-color .15s ease}
+.billing-add-icon svg{width:20px;height:20px;flex-shrink:0}
+.billing-add-icon:active{transform:scale(.95)}

@@ -18,3 +18,7 @@ This contains everything you need to run your app locally.
 5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
 6. Run the app on an emulator or physical device
 7. If you have already published your app in AI Studio, please [request upload key reset](https://support.google.com/googleplay/android-developer/answer/9842756#zippy=%2Crequest-an-upload-key-reset) in Google Play Console.
+
+## Windows desktop app
+
+The separate Windows desktop app and installer are in [`windows/`](windows/README.md). Build the per-user setup executable with `.\windows\build-windows.ps1`. The Windows app keeps the Android implementation separate and uses the same supported Google Drive backup format.

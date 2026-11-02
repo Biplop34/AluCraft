@@ -50,7 +50,9 @@ fun ReportExportDialog(
             appendLine("==========================================")
             appendLine("   ALUMINIUM FABRICATION WORK REPORT     ")
             appendLine("==========================================")
-            val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date())
+            val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+                .format(Date())
+                .replace(Regex("\\b(am|pm)\\b", RegexOption.IGNORE_CASE)) { it.value.uppercase(Locale.ROOT) }
             appendLine("Date: $dateStr")
             appendLine("Profile System: Thai ${thaiSize}\" Frame")
             if (customerDetails.customerName.isNotBlank()) {
