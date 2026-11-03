@@ -1548,6 +1548,26 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun replaceAppDataBatch(entriesJson: String): Boolean {
+            return try {
+                val entries = JSONObject(entriesJson)
+                val editor = context.getSharedPreferences("thai_app_storage", Context.MODE_PRIVATE).edit().clear()
+                val keys = entries.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    if (key.startsWith("thai_backup_") || key == "thai_cloud_backup_snapshot") return false
+                    val value = entries.opt(key)
+                    if (value == null || value === JSONObject.NULL) continue
+                    editor.putString(key, if (value is String) value else value.toString())
+                }
+                editor.commit()
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Could not replace app data with the verified cloud backup", e)
+                false
+            }
+        }
+
+        @JavascriptInterface
         fun saveAppData(key: String, value: String): Boolean {
             return try {
                 context.getSharedPreferences("thai_app_storage", Context.MODE_PRIVATE)

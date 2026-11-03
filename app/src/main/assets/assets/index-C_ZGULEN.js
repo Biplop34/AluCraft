@@ -1085,6 +1085,15 @@ isShareFormatOpen&&p.jsx("div",{
   });
 }
 
+function entryTimestamp(record){
+  const raw=record&&(record.timestamp??record.updatedAt??record.createdAt);
+  const numeric=Number(raw);
+  if(Number.isFinite(numeric)&&numeric>0)return numeric;
+  const parsed=Date.parse(String(raw||""));
+  return Number.isFinite(parsed)?parsed:0;
+}
+function newestFirst(a,b){return entryTimestamp(b)-entryTimestamp(a);}
+
 function CustomersScreen({onNavigate}){
   const mergeCustomersFromHistory=(dbList, histList)=>{
     const map=new Map();
@@ -1162,12 +1171,22 @@ function CustomersScreen({onNavigate}){
     };
   },[]);
 
+  const customerRecentTime=(customer)=>{
+    let latest=entryTimestamp(customer);
+    const name=String(customer.name||"").trim().toLowerCase();
+    for(const job of history){
+      if(String(job.customerName||"").trim().toLowerCase()!==name)continue;
+      if(hiddenCustomerKeys.includes("customer-job:"+String(job.id)))continue;
+      latest=Math.max(latest,entryTimestamp(job));
+    }
+    return latest;
+  };
   const filtered=customers.filter(c=>{
     if(hiddenCustomerKeys.includes(customerPageKey(c)))return false;
     const q=search.toLowerCase().trim();
     if(!q)return true;
     return (c.name||"").toLowerCase().includes(q)||(c.phone||"").includes(q);
-  });
+  }).sort((a,b)=>customerRecentTime(b)-customerRecentTime(a));
 
   const getCustJobs=(cust)=>{
     if(!cust)return[];
@@ -1175,7 +1194,7 @@ function CustomersScreen({onNavigate}){
     return history.filter(h=>{
       const hName=(h.customerName||"").trim().toLowerCase();
       return hName===cName&&!hiddenCustomerKeys.includes("customer-job:"+String(h.id));
-    });
+    }).sort(newestFirst);
   };
 
   const handleDeleteCustomerEntry=(job)=>{
@@ -1334,7 +1353,7 @@ function WorkHistoryScreen({onNavigate}){
     const q=search.toLowerCase().trim();
     if(!q)return true;
     return (h.customerName||"").toLowerCase().includes(q)||(h.customerPhone||"").includes(q)||(h.customerLocation||h.siteLocation||"").toLowerCase().includes(q);
-  });
+  }).sort(newestFirst);
 
   const handleDelete=(id)=>{
     if(!window.confirm("Hide this entry from Work History only? Customer and Billing pages will remain unchanged."))return;
@@ -1656,7 +1675,7 @@ function BillingScreen({onNavigate}){
       const record=billingRecords[String(job.id)];
       return record&&(String(record.squareFeetRate??"").trim()!==""||String(record.fanlightRate??"").trim()!=="");
     })
-    .sort((a,b)=>(Number(b.timestamp)||0)-(Number(a.timestamp)||0));
+    .sort(newestFirst);
 
   return p.jsxs("div",{className:"h-full overflow-y-auto bg-slate-50 p-4 md:p-6",children:[
     p.jsxs("div",{className:"max-w-2xl mx-auto space-y-4",children:[
@@ -1743,7 +1762,7 @@ function SettingsScreen({onNavigate}){
       try{
         const auto=localStorage.getItem("thai_backup_auto");
         const account=localStorage.getItem("thai_backup_account");
-        if(auto==="false"||!account||(window.__suppressAutoCloudBackupUntil||0)>Date.now())return;
+        if(auto==="false"||!account||window.__driveReconcileInProgress||(window.__suppressAutoCloudBackupUntil||0)>Date.now())return;
         performBackup(account,!0);
       }catch(e){}
     };
@@ -1752,16 +1771,19 @@ function SettingsScreen({onNavigate}){
       if(selectedEmail){
         localStorage.setItem("thai_backup_account",selectedEmail);
         setGoogleAccount(selectedEmail);
-        localStorage.setItem("thai_backup_auto","true");
-        setAutoBackup(!0);
         if(window.__pending_restore_after_account){
           window.__pending_restore_after_account=!1;
+          localStorage.setItem("thai_backup_auto","true");
+          setAutoBackup(!0);
           executeRestore(selectedEmail);
         }else{
-          performBackup(selectedEmail);
+          const autoMerge=!!window.__pending_sync_now;
+          window.__pending_sync_now=!1;
+          beginDriveAccountReconciliation(selectedEmail,autoMerge);
         }
       }else{
         window.__pending_restore_after_account=!1;
+        window.__pending_sync_now=!1;
         setBackupLoading(!1);
       }
     };
@@ -1771,16 +1793,19 @@ function SettingsScreen({onNavigate}){
         const email=manual.trim();
         localStorage.setItem("thai_backup_account",email);
         setGoogleAccount(email);
-        localStorage.setItem("thai_backup_auto","true");
-        setAutoBackup(!0);
         if(window.__pending_restore_after_account){
           window.__pending_restore_after_account=!1;
+          localStorage.setItem("thai_backup_auto","true");
+          setAutoBackup(!0);
           executeRestore(email);
         }else{
-          performBackup(email);
+          const autoMerge=!!window.__pending_sync_now;
+          window.__pending_sync_now=!1;
+          beginDriveAccountReconciliation(email,autoMerge);
         }
       }else{
         window.__pending_restore_after_account=!1;
+        window.__pending_sync_now=!1;
       }
     };
     registerDriveCallbacks();
@@ -1790,6 +1815,10 @@ function SettingsScreen({onNavigate}){
 
     window.addEventListener("customers_updated",reload);
     window.addEventListener("history_updated",reload);
+    if(localStorage.getItem("thai_backup_reconcile_pending")==="true"){
+      const account=localStorage.getItem("thai_backup_account")||"";
+      if(account)window.setTimeout(()=>beginDriveAccountReconciliation(account),0);
+    }
     return()=>{
       window.removeEventListener("customers_updated",reload);
       window.removeEventListener("history_updated",reload);
@@ -1840,14 +1869,18 @@ function SettingsScreen({onNavigate}){
       const email=manual.trim();
       localStorage.setItem("thai_backup_account",email);
       setGoogleAccount(email);
-      localStorage.setItem("thai_backup_auto","true");
-      setAutoBackup(!0);
       if(window.__pending_restore_after_account){
         window.__pending_restore_after_account=!1;
+        localStorage.setItem("thai_backup_auto","true");
+        setAutoBackup(!0);
         executeRestore(email);
       }else{
-        performBackup(email);
+        const autoMerge=!!window.__pending_sync_now;
+        window.__pending_sync_now=!1;
+        beginDriveAccountReconciliation(email,autoMerge);
       }
+    }else{
+      window.__pending_sync_now=!1;
     }
   };
 
@@ -1871,13 +1904,18 @@ function SettingsScreen({onNavigate}){
     }
   };
 
-  const collectAllAppBackupData=(targetAcc)=>{
+  const collectAllAppBackupData=(targetAcc,includeCloudFallback)=>{
+    const getStoredAppData=(key)=>{
+      if(!window.AndroidBridge)return"";
+      const reader=typeof window.AndroidBridge.getStoredAppData==="function"?window.AndroidBridge.getStoredAppData:window.AndroidBridge.getAppData;
+      return typeof reader==="function"?reader.call(window.AndroidBridge,key):"";
+    };
     // 1. Customers
     let customers=[];
     try{customers=JSON.parse(localStorage.getItem("thai_customers_db")||"[]");}catch(e){}
-    if(customers.length===0&&window.AndroidBridge&&typeof window.AndroidBridge.getAppData==="function"){
+    if(customers.length===0&&window.AndroidBridge){
       try{
-        const c=window.AndroidBridge.getAppData("thai_customers_db");
+        const c=getStoredAppData("thai_customers_db");
         if(c&&c.length>2)customers=JSON.parse(c);
       }catch(e){}
     }
@@ -1885,15 +1923,15 @@ function SettingsScreen({onNavigate}){
     // 2. Work History
     let history=[];
     try{history=JSON.parse(localStorage.getItem("thai_history")||"[]");}catch(e){}
-    if(history.length===0&&window.AndroidBridge&&typeof window.AndroidBridge.getAppData==="function"){
+    if(history.length===0&&window.AndroidBridge){
       try{
-        const h=window.AndroidBridge.getAppData("thai_history");
+        const h=getStoredAppData("thai_history");
         if(h&&h.length>2)history=JSON.parse(h);
       }catch(e){}
     }
 
     // Fallback to snapshot if both are empty
-    if(customers.length===0&&history.length===0){
+    if(includeCloudFallback!==false&&customers.length===0&&history.length===0){
       try{
         const snap=localStorage.getItem("thai_cloud_backup_snapshot")||
           (window.AndroidBridge&&typeof window.AndroidBridge.getCloudAppDataBackup==="function"?window.AndroidBridge.getCloudAppDataBackup():"");
@@ -1916,9 +1954,9 @@ function SettingsScreen({onNavigate}){
         if(calcStr)calculator=JSON.parse(calcStr);
       }catch(e){}
     }
-    if(!calculator&&window.AndroidBridge&&typeof window.AndroidBridge.getAppData==="function"){
+    if(!calculator&&window.AndroidBridge){
       try{
-        const calcStr=window.AndroidBridge.getAppData("thai_active_calculator");
+        const calcStr=getStoredAppData("thai_active_calculator");
         if(calcStr&&calcStr.length>5)calculator=JSON.parse(calcStr);
       }catch(e){}
     }
@@ -1926,9 +1964,9 @@ function SettingsScreen({onNavigate}){
     // 4. Base-8 Calculator Tape History
     let base8Tape=[];
     try{base8Tape=JSON.parse(localStorage.getItem("google_base8_tape")||"[]");}catch(e){}
-    if(base8Tape.length===0&&window.AndroidBridge&&typeof window.AndroidBridge.getAppData==="function"){
+    if(base8Tape.length===0&&window.AndroidBridge){
       try{
-        const b=window.AndroidBridge.getAppData("google_base8_tape");
+        const b=getStoredAppData("google_base8_tape");
         if(b&&b.length>2)base8Tape=JSON.parse(b);
       }catch(e){}
     }
@@ -1945,10 +1983,10 @@ function SettingsScreen({onNavigate}){
     }catch(e){}
     // Include invoice data held by the native bridge even when the invoice page has a separate WebView origin.
     try{
-      if(window.AndroidBridge&&typeof window.AndroidBridge.getAppData==="function"){
+      if(window.AndroidBridge){
         ["invoice_generator_records","invoice_shop_profile"].forEach(key=>{
           if(!Object.prototype.hasOwnProperty.call(storageDump,key)){
-            const value=window.AndroidBridge.getAppData(key);
+            const value=getStoredAppData(key);
             if(value)storageDump[key]=value;
           }
         });
@@ -1982,7 +2020,7 @@ function SettingsScreen({onNavigate}){
       (!Object.prototype.hasOwnProperty.call(pkg,"calculator")||pkg.calculator==null||(typeof pkg.calculator==="object"&&!Array.isArray(pkg.calculator)));
   };
 
-  const applyVerifiedDriveBackup=(pkg,targetAcc)=>{
+  const applyVerifiedDriveBackup=(pkg,targetAcc,replaceExisting)=>{
     if(!isValidBackupPackage(pkg))throw new Error("The backup data is invalid or unsupported.");
     let custs=pkg.customers||pkg.clients||pkg.customerList||[];
     let hist=pkg.history||pkg.jobs||pkg.records||pkg.workHistory||[];
@@ -2019,12 +2057,26 @@ function SettingsScreen({onNavigate}){
       else localStorage.setItem(probeKey,oldProbe);
     }
     const previous=new Map();
-    for(const key of Object.keys(entries))previous.set(key,localStorage.getItem(key));
+    if(replaceExisting){
+      for(let i=0;i<localStorage.length;i++){
+        const key=localStorage.key(i);
+        if(key!=null)previous.set(key,localStorage.getItem(key));
+      }
+    }else{
+      for(const key of Object.keys(entries))previous.set(key,localStorage.getItem(key));
+    }
     const previousAccount=localStorage.getItem("thai_backup_account");
     try{
+      if(replaceExisting){
+        for(const key of Array.from(previous.keys())){
+          if(!key.startsWith("thai_backup_")&&key!=="thai_cloud_backup_snapshot")localStorage.removeItem(key);
+        }
+      }
       for(const [key,value] of Object.entries(entries))localStorage.setItem(key,value);
       if(targetAcc)localStorage.setItem("thai_backup_account",targetAcc);
-      if(window.AndroidBridge&&typeof window.AndroidBridge.saveAppDataBatch==="function"){
+      if(replaceExisting&&window.AndroidBridge&&typeof window.AndroidBridge.replaceAppDataBatch==="function"){
+        if(!window.AndroidBridge.replaceAppDataBatch(JSON.stringify(entries)))throw new Error("The app could not replace its local data with the cloud backup.");
+      }else if(window.AndroidBridge&&typeof window.AndroidBridge.saveAppDataBatch==="function"){
         if(!window.AndroidBridge.saveAppDataBatch(JSON.stringify(entries)))throw new Error("The app could not persist the restored data.");
       }else if(window.AndroidBridge&&typeof window.AndroidBridge.saveAppData==="function"){
         for(const [key,value] of Object.entries(entries)){
@@ -2032,6 +2084,9 @@ function SettingsScreen({onNavigate}){
         }
       }
     }catch(error){
+      if(replaceExisting){
+        for(const key of Array.from({length:localStorage.length},(_,index)=>localStorage.key(index)).filter(key=>key!=null))localStorage.removeItem(key);
+      }
       for(const [key,value] of previous){
         if(value===null)localStorage.removeItem(key);
         else localStorage.setItem(key,value);
@@ -2131,10 +2186,272 @@ function SettingsScreen({onNavigate}){
     if(pending.length===0)return;
     clearPendingDriveRequests(requests);
     if(isBackup)setBackupLoading(!1);
+    if(pending.some(request=>request.reconcile||request.reconcileContext))finishDriveReconciliation(!1);
     const message="Google Drive returned an invalid operation result. Please try again.";
     if(isBackup&&pending[0].silent&&window.AndroidBridge&&typeof window.AndroidBridge.showToast==="function")window.AndroidBridge.showToast(message);
     else alert(message);
     runQueuedAutoDriveBackup();
+  };
+
+  const hasMeaningfulBackupValue=(value,depth=0)=>{
+    if(depth>10||value==null)return!1;
+    if(typeof value==="string"){
+      if(!value.trim())return!1;
+      try{return hasMeaningfulBackupValue(JSON.parse(value),depth+1);}catch(e){return!0;}
+    }
+    if(typeof value==="number")return Number.isFinite(value);
+    if(typeof value==="boolean")return value;
+    if(Array.isArray(value))return value.some(item=>hasMeaningfulBackupValue(item,depth+1));
+    if(typeof value==="object")return Object.values(value).some(item=>hasMeaningfulBackupValue(item,depth+1));
+    return!1;
+  };
+
+  const backupHasUserData=(pkg)=>{
+    if(!isValidBackupPackage(pkg))return!1;
+    const customers=pkg.customers||pkg.clients||pkg.customerList||[];
+    const history=pkg.history||pkg.jobs||pkg.records||pkg.workHistory||[];
+    const tape=pkg.base8Tape||pkg.tape||[];
+    const calculator=pkg.calculator;
+    let calculatorHasData=!1;
+    if(calculator&&typeof calculator==="object"){
+      const results=calculator.results||calculator.calculations||[];
+      const sets=calculator.sets||calculator.items||[];
+      calculatorHasData=Array.isArray(results)&&results.length>0;
+      if(!calculatorHasData&&Array.isArray(sets))calculatorHasData=sets.some(item=>item&&typeof item==="object"&&["height","length1","length2","width","rawHeight","rawLength1","rawLength2","quantity","count"].some(key=>String(item[key]??"").trim()!==""));
+      if(!calculatorHasData)calculatorHasData=["customerName","customerPhone","customerLocation","aluminumColor","aluminumBrand","customBrand","glassType","glassThickness"].some(key=>String(calculator[key]??"").trim()!=="");
+    }
+    if(customers.length||history.length||tape.length||calculatorHasData)return!0;
+    const userDataKeys=new Set(["thai_billing_records","thai_billing_square_feet_amount","thai_billing_fanlight_amount","invoice_generator_records","invoice_shop_profile"]);
+    for(const [key,value] of Object.entries(pkg.storageDump||{})){
+      if(!userDataKeys.has(key))continue;
+      if(hasMeaningfulBackupValue(value))return!0;
+    }
+    return!1;
+  };
+
+  const parseStoredBackupValue=(value)=>{
+    if(typeof value!=="string")return{parsed:!0,value:value};
+    try{return{parsed:!0,value:JSON.parse(value)};}catch(e){return{parsed:!1,value:value};}
+  };
+
+  const mergeBackupArrays=(cloudItems,localItems)=>{
+    const merged=new Map();
+    const identity=(item)=>{
+      if(item&&typeof item==="object"){
+        for(const key of ["id","_id","invoiceId","invoiceNo","invoiceNumber","recordId","jobId"]){
+          if(item[key]!=null&&String(item[key]).trim())return"id:"+key+":"+String(item[key]);
+        }
+      }
+      try{return"value:"+JSON.stringify(item);}catch(e){return"value:"+String(item);}
+    };
+    for(const item of [...(Array.isArray(cloudItems)?cloudItems:[]),...(Array.isArray(localItems)?localItems:[])]){
+      const key=identity(item);
+      const existing=merged.get(key);
+      if(!existing||entryTimestamp(item)>=entryTimestamp(existing))merged.set(key,item);
+    }
+    return Array.from(merged.values());
+  };
+
+  const mergeBackupValues=(cloudValue,localValue)=>{
+    if(!hasMeaningfulBackupValue(localValue))return cloudValue;
+    if(!hasMeaningfulBackupValue(cloudValue))return localValue;
+    const cloud=parseStoredBackupValue(cloudValue),local=parseStoredBackupValue(localValue);
+    if(cloud.parsed&&local.parsed&&Array.isArray(cloud.value)&&Array.isArray(local.value)){
+      return JSON.stringify(mergeBackupArrays(cloud.value,local.value));
+    }
+    if(cloud.parsed&&local.parsed&&cloud.value&&local.value&&typeof cloud.value==="object"&&typeof local.value==="object"&&!Array.isArray(cloud.value)&&!Array.isArray(local.value)){
+      const result={...cloud.value};
+      for(const [key,value] of Object.entries(local.value))result[key]=Object.prototype.hasOwnProperty.call(result,key)?mergeBackupValues(result[key],value):value;
+      return JSON.stringify(result);
+    }
+    return localValue;
+  };
+
+  const mergeBackupPackages=(cloudPkg,localPkg,account)=>{
+    const customers=mergeBackupArrays(cloudPkg.customers||cloudPkg.clients||cloudPkg.customerList||[],localPkg.customers||localPkg.clients||localPkg.customerList||[]);
+    const history=mergeBackupArrays(cloudPkg.history||cloudPkg.jobs||cloudPkg.records||cloudPkg.workHistory||[],localPkg.history||localPkg.jobs||localPkg.records||localPkg.workHistory||[]);
+    const base8Tape=mergeBackupArrays(cloudPkg.base8Tape||cloudPkg.tape||[],localPkg.base8Tape||localPkg.tape||[]);
+    const storageDump={...(cloudPkg.storageDump||{})};
+    for(const [key,value] of Object.entries(localPkg.storageDump||{}))storageDump[key]=Object.prototype.hasOwnProperty.call(storageDump,key)?mergeBackupValues(storageDump[key],value):value;
+    return{
+      ...cloudPkg,
+      ...localPkg,
+      type:"thai_fabricator_complete_backup",
+      version:localPkg.version||cloudPkg.version||"2.6.0",
+      timestamp:new Date().toISOString(),
+      displayDate:formatDateTime(new Date(),"en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:!0}),
+      account:account||localPkg.account||cloudPkg.account||"Local Account",
+      appTheme:localPkg.appTheme||cloudPkg.appTheme||"light",
+      customers,
+      history,
+      calculator:hasMeaningfulBackupValue(localPkg.calculator)?localPkg.calculator:cloudPkg.calculator||null,
+      base8Tape,
+      storageDump
+    };
+  };
+
+  const finishDriveReconciliation=(enableAutoBackup)=>{
+    window.__driveReconcileInProgress=!1;
+    delete window.__queuedAutoDriveBackupAccount;
+    localStorage.removeItem("thai_backup_reconcile_pending");
+    localStorage.setItem("thai_backup_auto",String(!!enableAutoBackup));
+    setAutoBackup(!!enableAutoBackup);
+    setBackupLoading(!1);
+  };
+
+  const cacheDriveBackupSnapshot=(json,pkg,account)=>{
+    try{
+      localStorage.setItem("thai_cloud_backup_snapshot",json);
+      if(window.AndroidBridge&&typeof window.AndroidBridge.cacheRestoredDriveBackup==="function")window.AndroidBridge.cacheRestoredDriveBackup(json,account);
+      const statsObj={custs:(pkg.customers||[]).length,hist:(pkg.history||[]).length,size:(json.length/1024).toFixed(1)};
+      if(pkg.displayDate){localStorage.setItem("thai_backup_last_time_verified",pkg.displayDate);setLastBackupTime(pkg.displayDate);}
+      localStorage.setItem("thai_backup_stats_verified",JSON.stringify(statsObj));
+      setBackupStats(statsObj);
+    }catch(e){}
+  };
+
+  const showCloudLocalConflictDialog=(onChoice)=>{
+    const dark=document.documentElement.classList.contains("dark");
+    const overlay=document.createElement("div");
+    overlay.style.cssText="position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;padding:18px;";
+    const card=document.createElement("div");
+    card.style.cssText=`width:min(480px,100%);max-height:90vh;overflow:auto;border-radius:20px;padding:22px;background:${dark?"#111827":"#ffffff"};color:${dark?"#f8fafc":"#0f172a"};box-shadow:0 24px 80px rgba(0,0,0,.32);font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;`;
+    const title=document.createElement("h2");
+    title.textContent="Choose Which Data To Keep";
+    title.style.cssText="margin:0 0 8px;font-size:18px;font-weight:850;";
+    const description=document.createElement("p");
+    description.textContent="AluCraft Found Data On This Device And In Google Drive. Choose How To Combine Or Replace It.";
+    description.style.cssText=`margin:0 0 16px;font-size:13px;line-height:1.5;color:${dark?"#cbd5e1":"#475569"};`;
+    card.append(title,description);
+    const choices=[
+      ["cloud","Use Cloud Data","Replace This Device's App Data With The Google Drive Backup.","cloud"],
+      ["both","Keep Both","Merge Local And Cloud Data, Then Update The Google Drive Backup.","layers"]
+    ];
+    const close=()=>{overlay.remove();};
+    choices.forEach(([value,label,detail,iconType],index)=>{
+      const button=document.createElement("button");
+      button.type="button";
+      button.style.cssText=`display:flex;align-items:flex-start;gap:12px;width:100%;text-align:left;padding:12px 14px;margin-top:${index?"9px":"0"};border:1px solid ${dark?"#334155":"#cbd5e1"};border-radius:13px;background:${dark?"#1f2937":"#f8fafc"};color:${dark?"#f8fafc":"#0f172a"};font:inherit;cursor:pointer;`;
+      const icon=document.createElement("span");
+      icon.style.cssText=`width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:12px;background:${dark?"rgba(45,212,191,.14)":"#ccfbf1"};color:${dark?"#5eead4":"#0f766e"};`;
+      const iconMarkup=iconType==="cloud"?'<path d="M20 16.2A4.5 4.5 0 0 0 18 7.6 6 6 0 0 0 6.2 9.8 4 4 0 0 0 6 17.5h13a3 3 0 0 0 1-1.3Z"/>':'<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 16 9 5 9-5"/>';
+      icon.innerHTML=`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconMarkup}</svg>`;
+      const text=document.createElement("span");text.style.cssText="display:block;min-width:0;";
+      const strong=document.createElement("span");strong.textContent=label;strong.style.cssText="display:block;font-size:14px;font-weight:800;";
+      const small=document.createElement("span");small.textContent=detail;small.style.cssText=`display:block;margin-top:4px;font-size:12px;line-height:1.4;color:${dark?"#cbd5e1":"#64748b"};`;
+      text.append(strong,small);button.append(icon,text);
+      button.addEventListener("click",()=>{close();onChoice(value);});
+      card.appendChild(button);
+    });
+    const cancel=document.createElement("button");
+    cancel.type="button";
+    cancel.style.cssText=`display:flex;align-items:center;gap:7px;margin:14px 0 0 auto;padding:9px 12px;border:0;border-radius:10px;background:transparent;color:${dark?"#cbd5e1":"#475569"};font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;`;
+    const cancelIcon=document.createElement("span");cancelIcon.textContent="×";cancelIcon.style.cssText="font-size:19px;line-height:1;";
+    const cancelText=document.createElement("span");cancelText.textContent="Cancel";cancel.append(cancelIcon,cancelText);
+    cancel.addEventListener("click",()=>{close();onChoice("cancel");});
+    card.appendChild(cancel);overlay.appendChild(card);document.body.appendChild(overlay);
+  };
+
+  const beginDriveAccountReconciliation=(account,autoMerge)=>{
+    window.__driveReconcileInProgress=!0;
+    localStorage.setItem("thai_backup_reconcile_pending","true");
+    setBackupLoading(!0);
+    try{
+      const localPackage=collectAllAppBackupData(account,!1);
+      const localHasData=backupHasUserData(localPackage);
+      executeRestore(account,{mode:autoMerge?"sync-now":"connect",localPackage,localHasData,autoMerge:!!autoMerge});
+    }catch(e){
+      finishDriveReconciliation(!1);
+      alert("Could not check local app data before connecting. "+(e.message||""));
+    }
+  };
+
+  const applyCloudBackupAndFinish=(pkg,json,account)=>{
+    try{
+      if(!applyVerifiedDriveBackup(pkg,account,!0))throw new Error("The app could not persist restored data.");
+      cacheDriveBackupSnapshot(json,pkg,account);
+      finishDriveReconciliation(!0);
+      alert("Google Drive data restored to this device.");
+      if(window.AndroidBridge&&typeof window.AndroidBridge.restartApp==="function")window.AndroidBridge.restartApp();
+      else window.location.reload();
+    }catch(e){
+      finishDriveReconciliation(!1);
+      alert("Google Drive restore failed: "+(e.message||"Could not apply the backup."));
+    }
+  };
+
+  const handleConnectReconciliationResult=(request,result)=>{
+    const context=request.reconcile;
+    if(result.success!==true||result.verified!==true){
+      const message=result.message||"Could not check Google Drive for an existing backup.";
+      if(message.toLowerCase().includes("no app backup was found")){
+        if(context.localHasData){
+          performBackup(request.accountEmail,!1,{mode:"initial-local",package:context.localPackage});
+        }else{
+          finishDriveReconciliation(!0);
+          alert("Google Account Connected. No App Data Was Found On This Device Or In Google Drive.");
+        }
+      }else{
+        finishDriveReconciliation(!1);
+        alert("Could Not Safely Check Google Drive. Your Local Data Was Left Unchanged. "+message);
+      }
+      return;
+    }
+    try{
+      const cloudPackage=JSON.parse(result.data||"");
+      if(!isValidBackupPackage(cloudPackage))throw new Error("The Drive backup has an unsupported format.");
+      const cloudHasData=backupHasUserData(cloudPackage);
+      if(!context.localHasData&&cloudHasData){
+        applyCloudBackupAndFinish(cloudPackage,result.data,request.accountEmail);
+        return;
+      }
+      if(context.localHasData&&!cloudHasData){
+        performBackup(request.accountEmail,!1,{mode:"initial-local",package:context.localPackage});
+        return;
+      }
+      if(!context.localHasData&&!cloudHasData){
+        cacheDriveBackupSnapshot(result.data,cloudPackage,request.accountEmail);
+        finishDriveReconciliation(!0);
+        alert("Google Account Connected. No App Data Was Found On This Device Or In Google Drive.");
+        return;
+      }
+      if(context.autoMerge){
+        try{
+          const merged=mergeBackupPackages(cloudPackage,context.localPackage,request.accountEmail);
+          if(!applyVerifiedDriveBackup(merged,request.accountEmail))throw new Error("The app could not save the synchronized data.");
+          performBackup(request.accountEmail,!1,{mode:"both",package:merged});
+        }catch(e){
+          finishDriveReconciliation(!1);
+          alert("Could Not Sync The Local And Cloud Data. Existing Data Was Preserved. "+(e.message||""));
+        }
+        return;
+      }
+      showCloudLocalConflictDialog(choice=>{
+        if(choice==="cancel"){
+          finishDriveReconciliation(!1);
+          return;
+        }
+        if(choice==="cloud"){
+          applyCloudBackupAndFinish(cloudPackage,result.data,request.accountEmail);
+          return;
+        }
+        if(choice!=="both"){
+          finishDriveReconciliation(!1);
+          return;
+        }
+        try{
+          const merged=mergeBackupPackages(cloudPackage,context.localPackage,request.accountEmail);
+          if(!applyVerifiedDriveBackup(merged,request.accountEmail))throw new Error("The app could not save the merged data.");
+          performBackup(request.accountEmail,!1,{mode:"both",package:merged});
+        }catch(e){
+          finishDriveReconciliation(!1);
+          alert("Could Not Merge The Local And Cloud Data. Existing Data Was Preserved. "+(e.message||""));
+        }
+      });
+    }catch(e){
+      finishDriveReconciliation(!1);
+      alert("Google Drive backup check failed: "+(e.message||"Could not read the backup."));
+    }
   };
 
   const handleDriveBackupResult=(resultText)=>{
@@ -2153,6 +2470,7 @@ function SettingsScreen({onNavigate}){
     setBackupLoading(Object.keys(requests).length>0);
     if(result.success!==true||result.verified!==true){
       const error="Google Drive backup failed: "+(result.message||"Upload verification was not confirmed.");
+      if(request.reconcileContext)finishDriveReconciliation(!1);
       if(request.silent&&window.AndroidBridge&&typeof window.AndroidBridge.showToast==="function")window.AndroidBridge.showToast(error);
       else alert(error);
       runQueuedAutoDriveBackup();
@@ -2167,7 +2485,11 @@ function SettingsScreen({onNavigate}){
     }catch(e){}
     setLastBackupTime(pkg.displayDate);
     setBackupStats(statsObj);
-    if(!request.silent)alert("Backup complete in Google Drive. The remote file was checked.");
+    if(request.reconcileContext){
+      finishDriveReconciliation(!0);
+      const message=request.reconcileContext.mode==="both"?"Local and cloud data were merged and synced.":"Local app data was backed up to Google Drive.";
+      alert(message);
+    }else if(!request.silent)alert("Backup complete in Google Drive. The remote file was checked.");
     runQueuedAutoDriveBackup();
   };
 
@@ -2184,6 +2506,10 @@ function SettingsScreen({onNavigate}){
     delete requests[result.operationId];
     if(request.timeoutId)window.clearTimeout(request.timeoutId);
     window.__pendingDriveRestoreRequests=requests;
+    if(request.reconcile){
+      handleConnectReconciliationResult(request,result);
+      return;
+    }
     if(result.success!==true||result.verified!==true){
       alert("Google Drive restore failed: "+(result.message||"A verified cloud download was not confirmed."));
       runQueuedAutoDriveBackup();
@@ -2219,7 +2545,7 @@ function SettingsScreen({onNavigate}){
   };
 
   const runQueuedAutoDriveBackup=()=>{
-    if(hasPendingDriveOperation())return;
+    if(window.__driveReconcileInProgress||hasPendingDriveOperation())return;
     const account=window.__queuedAutoDriveBackupAccount;
     if(!account)return;
     delete window.__queuedAutoDriveBackupAccount;
@@ -2227,7 +2553,8 @@ function SettingsScreen({onNavigate}){
     window.setTimeout(()=>performBackup(account,!0),0);
   };
 
-  const performBackup=(acc,silent)=>{
+  const performBackup=(acc,silent,reconcileContext)=>{
+    if(window.__driveReconcileInProgress&&!reconcileContext)return;
     const targetAcc=acc||googleAccount;
     if(hasPendingDriveOperation()){
       if(silent){
@@ -2246,7 +2573,7 @@ function SettingsScreen({onNavigate}){
     try{
       registerDriveCallbacks();
       setBackupLoading(!0);
-      const pkg=collectAllAppBackupData(targetAcc);
+      const pkg=reconcileContext&&reconcileContext.package?reconcileContext.package:collectAllAppBackupData(targetAcc);
       const jsonStr=JSON.stringify(pkg);
       if(!window.AndroidBridge||typeof window.AndroidBridge.requestDriveBackup!=="function")throw new Error("Google Drive backup is not available in this environment.");
       if(window.AndroidBridge&&typeof window.AndroidBridge.saveAppData==="function"){
@@ -2262,12 +2589,13 @@ function SettingsScreen({onNavigate}){
         if(!pending)return;
         delete requests[operationId];
         setBackupLoading(Object.keys(requests).length>0);
+        if(pending.reconcileContext)finishDriveReconciliation(!1);
         const error="Google Drive backup timed out; no upload success was confirmed.";
         if(pending.silent&&window.AndroidBridge&&typeof window.AndroidBridge.showToast==="function")window.AndroidBridge.showToast(error);
         else alert(error);
         runQueuedAutoDriveBackup();
       },180000);
-      requests[operationId]={pkg:pkg,json:jsonStr,silent:!!silent,timeoutId:timeoutId};
+      requests[operationId]={pkg:pkg,json:jsonStr,silent:!!silent,timeoutId:timeoutId,reconcileContext:reconcileContext||null};
       if(!window.AndroidBridge.requestDriveBackup(jsonStr,targetAcc,operationId)){
         throw new Error("The app could not start Google Drive backup.");
       }
@@ -2278,6 +2606,7 @@ function SettingsScreen({onNavigate}){
         window.clearTimeout(pending.timeoutId);
         delete requests[operationId];
       }
+      if(reconcileContext)finishDriveReconciliation(!1);
       setBackupLoading(Object.keys(requests).length>0);
       const error="Google Drive backup failed: "+e.message;
       if(silent&&window.AndroidBridge&&typeof window.AndroidBridge.showToast==="function")window.AndroidBridge.showToast(error);
@@ -2286,17 +2615,20 @@ function SettingsScreen({onNavigate}){
     }
   };
 
-  const executeRestore=(acc)=>{
+  const executeRestore=(acc,reconcile)=>{
     if(hasPendingDriveOperation()){
+      if(reconcile)finishDriveReconciliation(!1);
       alert("A Google Drive action is already in progress. Please wait and try again.");
       return;
     }
     const targetAcc=acc||googleAccount;
     if(!targetAcc){
+      if(reconcile)finishDriveReconciliation(!1);
       alert("Select a Google account first.");
       return;
     }
     if(!window.AndroidBridge||typeof window.AndroidBridge.requestDriveRestore!=="function"){
+      if(reconcile)finishDriveReconciliation(!1);
       alert("Google Drive restore is available in the Android app.");
       return;
     }
@@ -2307,10 +2639,11 @@ function SettingsScreen({onNavigate}){
       const pending=requests[operationId];
       if(!pending)return;
       delete requests[operationId];
+      if(pending.reconcile)finishDriveReconciliation(!1);
       alert("Google Drive restore timed out; no cloud download was confirmed.");
       runQueuedAutoDriveBackup();
     },180000);
-    requests[operationId]={accountEmail:targetAcc,timeoutId:timeoutId};
+    requests[operationId]={accountEmail:targetAcc,timeoutId:timeoutId,reconcile:reconcile||null};
     try{
       registerDriveCallbacks();
       if(!window.AndroidBridge.requestDriveRestore(targetAcc,operationId)){
@@ -2322,6 +2655,7 @@ function SettingsScreen({onNavigate}){
         window.clearTimeout(pending.timeoutId);
         delete requests[operationId];
       }
+      if(reconcile)finishDriveReconciliation(!1);
       alert("Google Drive restore failed: "+e.message);
       runQueuedAutoDriveBackup();
     }
@@ -2334,6 +2668,16 @@ function SettingsScreen({onNavigate}){
       return;
     }
     executeRestore(googleAccount);
+  };
+
+  const handleSyncNow=()=>{
+    if(!googleAccount){
+      window.__pending_restore_after_account=!1;
+      window.__pending_sync_now=!0;
+      handleConnectGoogle();
+      return;
+    }
+    beginDriveAccountReconciliation(googleAccount,!0);
   };
 
   // Local Single-File Export (.json)
@@ -2640,7 +2984,7 @@ function SettingsScreen({onNavigate}){
       }),
 
       // Drive Backup & Restore Buttons (Spacious, No Overlap)
-      p.jsxs("div",{className:"grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1",children:[
+      p.jsxs("div",{className:"grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1",children:[
         p.jsxs("button",{
           type:"button",
           onClick:()=>performBackup(),
@@ -2660,6 +3004,17 @@ function SettingsScreen({onNavigate}){
           children:[
             p.jsx("span",{className:"text-base",children:"🔄"}),
             "Restore Data"
+          ]
+        }),
+        p.jsxs("button",{
+          type:"button",
+          onClick:handleSyncNow,
+          disabled:backupLoading,
+          className:"py-3.5 px-4 rounded-2xl font-black text-xs md:text-sm uppercase tracking-wider transition-all border flex items-center justify-center gap-2 shadow-2xs hover:bg-slate-50 active:scale-95 disabled:opacity-60",
+          style:{backgroundColor:"#ffffff",borderColor:"#cbd5e1",color:"#0f172a"},
+          children:[
+            p.jsx("span",{className:"text-base",children:"🔁"}),
+            backupLoading?"Syncing...":"Sync Now"
           ]
         })
       ]})

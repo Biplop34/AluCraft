@@ -169,6 +169,7 @@ public partial class MainWindow : Window
           const write = (key, value) => { try { localStorage.setItem(key, String(value)); return true; } catch (_) { return false; } };
           window.AndroidBridge = {
             getAppData: key => read(key),
+            getStoredAppData: key => read(key),
             saveAppData: (key, value) => write(key, value),
             saveAppDataBatch: json => {
               try {
@@ -176,6 +177,22 @@ public partial class MainWindow : Window
                 for (const [key, value] of Object.entries(values || {})) {
                   if (key.startsWith("thai_backup_") || key === "thai_cloud_backup_snapshot" || value == null) continue;
                   localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+                }
+                return true;
+              } catch (_) { return false; }
+            },
+            replaceAppDataBatch: json => {
+              try {
+                const values = typeof json === "string" ? JSON.parse(json) : json;
+                for (const key of Object.keys(values || {})) {
+                  if (key.startsWith("thai_backup_") || key === "thai_cloud_backup_snapshot") return false;
+                }
+                for (let index = localStorage.length - 1; index >= 0; index--) {
+                  const key = localStorage.key(index);
+                  if (key && !key.startsWith("thai_backup_") && key !== "thai_cloud_backup_snapshot") localStorage.removeItem(key);
+                }
+                for (const [key, value] of Object.entries(values || {})) {
+                  if (value != null) localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
                 }
                 return true;
               } catch (_) { return false; }
