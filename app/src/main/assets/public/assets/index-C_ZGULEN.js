@@ -2675,9 +2675,9 @@ function AboutScreen({onNavigate}){
     {icon:"👥",title:"Customer Database",desc:"Save and manage customer names, phone numbers, and site locations. Open customer work and use the Add to Billing option."},
     {icon:"📋",title:"Work History & Reports",desc:"Review, search, restore, or remove saved jobs; export reports as images and send eligible work to Billing."},
     {icon:"💾",title:"Save Report to Gallery",desc:"Save an All In One report, save items individually, or export Bill, Aluminium, Glass, and Hardware report images."},
-    {icon:"📄",title:"Invoice Generator",desc:"Create Bangla or English invoices with customer details, item descriptions, quantities, rates, and automatic totals. Preview on A4, choose Manual Signature or No Signature, then save as an image or PDF or share."},
+    {icon:"📄",title:"Invoice Generator",desc:"Create Bangla or English invoices with customer details, item descriptions, quantities, rates, and automatic totals. Add More becomes available after item entry starts. Quantity supports feet and inch marks that are ignored in calculations, while Description preserves lowercase typing. Add a Fitting Charge and see its Added status, then preview on A4, choose a signature option, save as an image or PDF, or share."},
     {icon:"🏪",title:"Invoice Shop Details",desc:"Set the shop name, logo, address, and phone numbers shown on invoices from Invoice Generator or the Settings page."},
-    {icon:"⚙️",title:"Settings & Appearance",desc:"Choose Light, Dark, or System appearance, manage customer profiles, and open invoice shop details."},
+    {icon:"🏷️",title:"Price List",desc:"Browse High Profile and Low Profile aluminium price tables and compare profile lengths with Silver, Bronze, SS, and Golden/PC prices."}, {icon:"⚙️",title:"Settings & Appearance",desc:"Choose Light, Dark, or System appearance, manage customer profiles, and open invoice shop details."},
     {icon:"☁️",title:"Google Drive & Local Backup",desc:"Back up app data to your private Google Drive AppData folder or export and restore a local JSON backup. The supported Drive backup can move app data between Android and Windows."},
     {icon:"📱",title:"Android App",desc:"Use AluCraft on Android phones and tablets for aluminium fabrication measurements, Inch Calculator and base-8 suta calculations, customers, work history, billing, invoices, reports, settings, and local or Google Drive backup."},
     {icon:"🖥️",title:"Windows Desktop App",desc:"Install AluCraft on Windows with a setup installer, launch it from Start or Windows Search, and use the same fabrication, calculator, customer, billing, invoice, settings, and backup features."},
@@ -2841,6 +2841,7 @@ function WE({children:n,activeService:i,onSwitch:l,onExit:r}){
     app1:"AluCraft",
     app2:"Inch Calculator",billing:"Billing",invoice:"Invoice Generator",customers:"Customers",
     history:"Work History",
+    priceList:"Price List",
     settings:"Settings",
     about:"About",
     contact:"Contact Me"
@@ -2925,6 +2926,7 @@ function WE({children:n,activeService:i,onSwitch:l,onExit:r}){
                 {id:"app1",label:"Aluminium Calculator",icon:"🪟"},
                 {id:"app2",label:"Inch Calculator",icon:"🔢"},{id:"billing",label:"Billing",icon:"🧾"},{id:"invoice",label:"Invoice Generator",icon:"📄"},{id:"customers",label:"Customers",icon:"👥"},
                 {id:"history",label:"Work History",icon:"📋"},
+                {id:"priceList",label:"Price List",icon:"🏷️"},
                 {id:"settings",label:"Settings",icon:"⚙️"},
                 {id:"about",label:"About",icon:"ℹ️"},
                 {id:"contact",label:"Contact Me",icon:"👤"}
@@ -3526,17 +3528,11 @@ billingOpen&&p.jsxs("div",{className:"p-4 md:p-6 space-y-4 border-t border-slate
 p.jsxs("div",{className:"grid grid-cols-1 md:grid-cols-2 gap-4",children:[
 p.jsxs("div",{className:"space-y-1",children:[
 p.jsx("label",{className:"text-[8px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest block",children:"Square Feet Rate"}),
-p.jsxs("div",{className:"flex items-center w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl shadow-inner focus-within:border-teal-400 focus-within:bg-white",children:[
-p.jsx("span",{className:"mr-3 flex-shrink-0 text-slate-500 font-bold",children:"৳"}),
-p.jsx("input",{type:"number",inputMode:"decimal",min:"0",step:"any",value:squareFeetAmount,onChange:j=>{const amount=j.target.value;setSquareFeetAmount(amount);if(amount)localStorage.setItem("thai_billing_square_feet_amount",amount);else localStorage.removeItem("thai_billing_square_feet_amount")},className:"min-w-0 flex-1 bg-transparent outline-none font-bold text-xs md:text-sm text-slate-800",placeholder:"Enter amount"})
-]})
+p.jsx("input",{type:"number",inputMode:"decimal",min:"0",step:"any",value:squareFeetAmount,onChange:j=>{const amount=j.target.value;setSquareFeetAmount(amount);if(amount)localStorage.setItem("thai_billing_square_feet_amount",amount);else localStorage.removeItem("thai_billing_square_feet_amount")},className:"w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold shadow-inner focus:border-teal-400 focus:bg-white text-xs md:text-sm",placeholder:"Enter amount"})
 ]}),
 p.jsxs("div",{className:"space-y-1",children:[
 p.jsx("label",{className:"text-[8px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest block",children:"Fanlight Rate"}),
-p.jsxs("div",{className:"flex items-center w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl shadow-inner focus-within:border-teal-400 focus-within:bg-white",children:[
-p.jsx("span",{className:"mr-3 flex-shrink-0 text-slate-500 font-bold",children:"৳"}),
-p.jsx("input",{type:"number",inputMode:"decimal",min:"0",step:"any",value:fanlightAmount,onChange:j=>{const amount=j.target.value;setFanlightAmount(amount);if(amount)localStorage.setItem("thai_billing_fanlight_amount",amount);else localStorage.removeItem("thai_billing_fanlight_amount")},className:"min-w-0 flex-1 bg-transparent outline-none font-bold text-xs md:text-sm text-slate-800",placeholder:"Enter amount"})
-]})
+p.jsx("input",{type:"number",inputMode:"decimal",min:"0",step:"any",value:fanlightAmount,onChange:j=>{const amount=j.target.value;setFanlightAmount(amount);if(amount)localStorage.setItem("thai_billing_fanlight_amount",amount);else localStorage.removeItem("thai_billing_fanlight_amount")},className:"w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold shadow-inner focus:border-teal-400 focus:bg-white text-xs md:text-sm",placeholder:"Enter amount"})
 ]})
 ]}),
 (squareFeetAmount||fanlightAmount)&&p.jsx("button",{type:"button",onClick:()=>{billingReportRecordRef.current=null;setSquareFeetAmount("");setFanlightAmount("");localStorage.removeItem("thai_billing_rate_type");localStorage.removeItem("thai_billing_square_feet_amount");localStorage.removeItem("thai_billing_fanlight_amount")},className:"ml-auto block text-right text-[10px] md:text-xs font-black uppercase tracking-wider text-teal-700 hover:underline",children:"Clear Rate Selection"})
@@ -4134,6 +4130,7 @@ function mj(){
     p.jsx("div",{className:n==="app2"?"block h-full":"hidden",children:p.jsx(hj,{onNavigate:l})}),
     n==="customers"&&p.jsx(CustomersScreen,{onNavigate:l}),
     n==="history"&&p.jsx(WorkHistoryScreen,{onNavigate:l}),
+    n==="priceList"&&p.jsx("div",{className:"flex-1 min-h-0 h-full",children:p.jsx("iframe",{src:"/price-list.html?v=3",title:"Price List",className:"w-full h-full border-0 bg-slate-50"})}),
     n==="billing"&&p.jsx(BillingScreen,{onNavigate:l}),
     n==="invoice"&&p.jsx("div",{className:"flex-1 min-h-0 h-full",children:p.jsx("iframe",{src:"/invoice-generator.html?v=14",title:"Invoice Generator",className:"w-full h-full border-0 bg-slate-50"})}),
     n==="settings"&&p.jsx(SettingsScreen,{onNavigate:l}),

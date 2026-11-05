@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Price List</title>
+    <style>
+    :root {
+      color-scheme: light;
+      --pl-bg: #f5f7fa;
+      --pl-surface: #ffffff;
+      --pl-text: #172033;
+      --pl-muted: #667388;
+      --pl-border: #9ba5b3;
+      --pl-soft-border: #dce2e9;
+      --pl-head: #e9edf2;
+      --pl-row-alt: #f7f8fa;
+      --pl-accent: #3f9188;
+      --pl-accent-text: #ffffff;
+    }
+    html.dark {
+      color-scheme: dark;
+      --pl-bg: #151b26;
+      --pl-surface: #202a39;
+      --pl-text: #f1f5f9;
+      --pl-muted: #b2bfd0;
+      --pl-border: #6b7788;
+      --pl-soft-border: #39475a;
+      --pl-head: #2c394b;
+      --pl-row-alt: #242f3e;
+      --pl-accent: #56b4a8;
+      --pl-accent-text: #102a28;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-height: 100%; margin: 0; }
+    body {
+      background: var(--pl-bg);
+      color: var(--pl-text);
+      font: 500 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    .page { min-height: 100%; padding: 18px clamp(8px, 3vw, 32px) 30px; }
+    .content { width: 100%; max-width: 1200px; margin: 0 auto; }
+    .profile-switch { display: flex; gap: 4px; width: 100%; max-width: 440px; margin: 0 auto 16px; padding: 4px; border: 1px solid var(--pl-soft-border); border-radius: 14px; background: var(--pl-head); }
+    .profile-tab { flex: 1; min-height: 42px; padding: 7px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--pl-muted); font: inherit; font-weight: 800; cursor: pointer; touch-action: manipulation; }
+    .profile-tab[aria-pressed="true"] { background: var(--pl-accent); color: var(--pl-accent-text); box-shadow: 0 1px 3px #0002; }
+    .updated-row { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+    .updated { color: var(--pl-muted); white-space: nowrap; }
+    .makers { margin: 0 0 13px; text-align: center; font-size: 13px; font-weight: 800; letter-spacing: .045em; }
+    .table-wrap {
+      overflow-x: hidden;
+      background: var(--pl-surface); border: 1px solid var(--pl-border);
+    }
+    table { border-collapse: collapse; width: 100%; min-width: 0; table-layout: fixed; font-size: 12px; font-variant-numeric: tabular-nums; }
+    th, td { border: 1px solid var(--pl-border); padding: 7px 5px; overflow-wrap: anywhere; }
+    thead th { background: var(--pl-head); font-weight: 800; text-align: center; }
+    .golden-header { white-space: nowrap; overflow-wrap: normal; word-break: keep-all; }
+    th:first-child, td:first-child { width: 32%; text-align: left; }
+    th:nth-child(2), td:nth-child(2) { width: 8%; text-align: center; }
+    th:nth-child(n+3), td:nth-child(n+3) { width: 15%; }
+    td:nth-child(n+3) { text-align: right; white-space: nowrap; letter-spacing: -.02em; }
+    tbody tr.data-row:nth-child(even) { background: var(--pl-row-alt); }
+    .section-row td { background: var(--pl-head); text-align: center !important; font-weight: 800; }
+    @media (max-width: 560px) {
+      .page { padding: 15px 8px 24px; }
+      .updated { font-size: 11px; }
+      .makers { font-size: 11px; line-height: 1.35; }
+      th:first-child, td:first-child { width: 25%; }
+      th:nth-child(2), td:nth-child(2) { width: 9%; }
+      th:nth-child(n+3), td:nth-child(n+3) { width: 16.5%; }
+      .golden-header { font-size: 8px; }
+      table { font-size: 10.5px; }
+      th, td { padding: 5px 3px; }
+    }
+    @media (max-width: 360px) {
+      table { font-size: 10px; }
+      th, td { padding: 4px 2px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="content" aria-label="Aluminium profile price list">
+      <div class="profile-switch" role="group" aria-label="Profile type">
+        <button id="high-profile-tab" class="profile-tab" type="button" aria-pressed="true">High Profile</button>
+        <button id="low-profile-tab" class="profile-tab" type="button" aria-pressed="false">Low Profile</button>
+      </div>
+      <div class="updated-row">
+        <span class="updated" id="profile-updated">Update Date: 15 March 2025</span>
+      </div>
+      <p class="makers" id="profile-makers">MAXX, KAI, CHUNG HUA, BTA, ALTECH, AXX, NIKKI, NEO</p>
+      <div class="table-wrap" role="region" aria-label="Price list table" tabindex="0">
+        <table>
+          <thead>
+            <tr><th>Profile Name</th><th>Length</th><th>Silver</th><th>Bronze</th><th>SS</th><th class="golden-header">Golden/PC</th></tr>
+          </thead>
+          <tbody id="price-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const topRows = [
+        ['3" Outer Top','21','3854','3970','4089','4624'],
+        ['3" Outer Bottom (L)','21','2579','2655','2738','3095'],
+        ['3" Outer Bottom (H)','21','3292','3391','3494','3954'],
+        ['3" Outer Side','21','2767','2849','2936','3319'],
+        ['3" Outer Side','18.6','2439','2510','2584','2923'],
+        ['Shutter Lock','21','3256','3359','3457','3905'],
+        ['Shutter Lock','18.6','2870','2959','3045','3441'],
+        ['Inter Lock','21','3430','3539','3646','4116'],
+        ['Inter Lock','18.6','3026','3118','3212','3626'],
+        ['Shutter Top','21','2478','2559','2634','2973'],
+        ['Shutter Bottom','21','3534','3646','3758','4239'],
+        ['Shutter Devider','21','2703','2785','2865','3240'],
+        ['Muck Cover','21','1542','1592','1639','1849'],
+        ['6" Spandle','21','3028','3092','3184','3636'],
+        ['3" Fixed Top & Side','21','4375','4500','4640','5246'],
+        ['3" Fixed Bottom','21','3610','3723','3833','4334'],
+        ['3" Fixed Bottom Cover','21','1426','1471','1510','1712'],
+        ['3" Fixed Group Cover','21','2111','2170','2238','2533'],
+        ['3" Plain Cover','21','1237','1270','1314','1484'],
+        ['3" Wall Frame','21','3238','3343','3440','3886'],
+        ['4" Outer Top','21','4529','4668','4805','5434'],
+        ['4" Outer Bottom (L)','21','3605','3716','3831','4324'],
+        ['4" Outer Bottom (H)','21','3984','4106','4226','4781'],
+        ['4" Outer Side','21','3263','3360','3463','3916'],
+        ['4" Outer Side','18.6','2875','2960','3049','3450'],
+        ['4" Fixed Top & Side','21','6475','6676','6880','7767'],
+        ['4" Fixed Bottom','21','4822','4968','5115','5786'],
+        ['4" Fixed Bottom Cover','21','1818','1865','1921','2180'],
+        ['4" Fixed Group Cover','21','2818','2904','2989','3381'],
+        ['4" Plain Cover','21','1818','1865','1921','2180'],
+        ['4" Wall Frame','21','5086','5245','5404','6102'],
+        ['Protector Bit (S)','21','754','775','800','904'],
+        ['Protector Bit (D)','21','1102','1135','1167','1320'],
+        ['Net Section','21','2270','2344','2412','2723'],
+        ['Net-Handle','21','1779','1826','1886','2133'],
+        ['Louver "Z"','21','1336','1377','1417','1603'],
+        ['Louver "U"','21','1566','1618','1664','1879'],
+        ['1.75 Box','21','3074','3168','3259','3689'],
+        ['1.25 Box','21','2341','2410','2489','2810'],
+        ['Fitting Angle','21','3013','3104','3198','3326'],
+        ['Fitting Angle 1x1','21','1956','2010','2078','2348'],
+        ['Wall Angle','21','925','955','981','1109'],
+        ['Cross Tee','21','949','973','1004','1136'],
+        ['1 Shutter Outer Top','21','2123','2186','2252','2546'],
+        ['1 Shutter Outer Bottom (L)','21','1649','1701','1751','1984'],
+        ['1 Shutter Outer Side','21','1715','1764','1818','2057'],
+        ['3" Cornner Box 135°','21','7906','8149','8395','9490'],
+        ['3" Cornner Box 90°','21','10565','10888','11210','12680'],
+        ['4" Cornner Box 135°','21','11604','11953','12310','13925'],
+        ['4" Cornner Box 90°','21','13855','14290','14718','16627'],
+        ['1"x2" BOX',"21'","3089","3174","3269",'']
+      ];
+      const doorRows = [
+        ['Door Shutter Side','21','5592','5768','5937','6714'],
+        ['Door Shutter Top','21','5575','5747','5914','6693'],
+        ['Door Shutter Bottom','21','6802','7020','7223','8164'],
+        ['Door Floor Bottom','21','5709','5887','6066','6848'],
+        ['Door Closer Section','21','5325','5492','5657','6393'],
+        ['Door Closer Cover','21','2049','2110','2174','2459'],
+        ['Door Glass Bit','21','679','697','719','812'],
+        ['Door Handle','21','7520','7754','7987','9022'],
+        ['Door Divider','21','2807','2887','2976','3367']
+      ];
+      const lowRows = [
+        ['3" Outer Top','21','3152','3245','3343','3447'],
+        ['3" Outer Bottom (L)','21','2261','2331','2399','2470'],
+        ['3" Outer Bottom (H)','21','3046','3138','3232','3330'],
+        ['3" Outer Side','21','2586','2665','2745','2828'],
+        ['3" Outer Side','18.6','2284','2348','2418','2491'],
+        ['Shutter Lock','21','2924','3013','3104','3198'],
+        ['Shutter Lock','18.6','2581','2654','2734','2817'],
+        ['Inter Lock','21','3082','3174','3268','3370'],
+        ['Inter Lock','18.6','2715','2796','2879','2969'],
+        ['Shutter Top','21','2260','2326','2397','2468'],
+        ['Shutter Bottom','21','3174','3268','3366','3471'],
+        ['Shutter Devider','21','2485','2558','2634','2714'],
+        ['Muck Cover','21','1385','1425','1470','1513'],
+        ['6" Spandle','21','2785','2868','2952','3044'],
+        ['3" Fixed Top & Side','21','3977','4096','4217','4346'],
+        ['3" Fixed Bottom','21','3340','3440','3543','3649'],
+        ['3" Fixed Bottom Cover','21','1314','1352','1392','1434'],
+        ['3" Fixed Group Cover','21','1921','1976','2036','2096'],
+        ['3" Plain Cover','21','1237','1273','1311','1352'],
+        ['3" Wall Frame','21','3013','3100','3195','3291'],
+        ['4" Outer Top','21','4065','4187','4311','4442'],
+        ['4" Outer Bottom (L)','21','3314','3413','3516','3621'],
+        ['4" Outer Bottom (H)','21','3616','3725','3838','3954'],
+        ['4" Outer Side','21','3038','3130','3226','3319'],
+        ['4" Outer Side','18.6','2676','2757','2842','2924'],
+        ['4" Fixed Top & Side','21','6089','6272','6458','6657'],
+        ['4" Fixed Bottom','21','4408','4539','4676','4820'],
+        ['4" Fixed Bottom Cover','21','1651','1701','1754','1806'],
+        ['4" Fixed Group Cover','21','2560','2636','2717','2798'],
+        ['4" Plain Cover','21','1747','1800','1855','1910'],
+        ['4" Wall Frame','21','4639','4778','4921','5070'],
+        ['Protector Bit (S)','21','698','718','741','837'],
+        ['Protector Bit (D)','21','1152','1187','1222','1382'],
+        ['Net Section','21','2039','2102','2164','2230'],
+        ['Net Handle','21','1858','1914','1970',''],
+        ['Louver "Z"','21','1201','1237','1273','1311'],
+        ['Louver "U"','21','1405','1448','1493','1538'],
+        ['1.75 Box','21','2826','2908','2998','3089'],
+        ['1.25 Box','21','2126','2192','2259','2323'],
+        ['Fitting Angle','21','2418','2490','2564',''],
+        ['Fitting Angle 1x1','21','1805','1859','1912','1973'],
+        ['Wall Angle','21','830','854','880','907'],
+        ['1"x2" Box','21','2590','2673','2754',''],
+        ['Cross Tee','21','852','876','904','932'],
+        ['1 Shutter Outer Top','21','1900','1956','2014','2279'],
+        ['1 Shutter Outer Bottom (L)','21','1297','1336','1377','1556'],
+        ['1 Shutter Outer Side','21','1390','1431','1474','1668'],
+        ['10mm U Channel',"21'",'2710','2800','2883','2961']
+      ];
+      const alcoRows = [
+        ['1 Shutter Outer Top','21','2225','2261','2303','2399'],
+        ['1 Shutter Outer Bottom (L)','21','1500','1546','1619','1707'],
+        ['1 Shutter Outer Side','21','1615','1645','1688','1781']
+      ];
+      const body = document.getElementById('price-rows');
+      const updated = document.getElementById('profile-updated');
+      const makers = document.getElementById('profile-makers');
+      const highTab = document.getElementById('high-profile-tab');
+      const lowTab = document.getElementById('low-profile-tab');
+      const makeRow = values => {
+        const row = document.createElement('tr');
+        row.className = 'data-row';
+        values.forEach(value => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+        return row;
+      };
+      const addSection = label => {
+        const row = document.createElement('tr');
+        row.className = 'section-row';
+        const cell = document.createElement('td');
+        cell.colSpan = 6;
+        cell.textContent = label;
+        row.appendChild(cell);
+        body.appendChild(row);
+      };
+      const renderProfile = isLow => {
+        body.replaceChildren();
+        highTab.setAttribute('aria-pressed', String(!isLow));
+        lowTab.setAttribute('aria-pressed', String(isLow));
+        if (isLow) {
+          updated.textContent = 'Update Date: 05 March 2026';
+          makers.textContent = 'PRISTINE, ALCO, PHP, ALOYTECH, AVCO, ALPHA, TIGER, PANDA';
+          lowRows.forEach(row => body.appendChild(makeRow(row)));
+          addSection('ALCO');
+          alcoRows.forEach(row => body.appendChild(makeRow(row)));
+          return;
+        }
+        updated.textContent = 'Update Date: 15 March 2025';
+        makers.textContent = 'MAXX, KAI, CHUNG HUA, BTA, ALTECH, AXX, NIKKI, NEO';
+        topRows.forEach(row => body.appendChild(makeRow(row)));
+        addSection('Sewing Door');
+        doorRows.forEach(row => body.appendChild(makeRow(row)));
+      };
+      highTab.addEventListener('click', () => renderProfile(false));
+      lowTab.addEventListener('click', () => renderProfile(true));
+      renderProfile(false);
+      const media = window.matchMedia('(prefers-color-scheme: dark)');
+      const applyTheme = () => {
+        let preference = 'light';
+        try { preference = localStorage.getItem('app_theme') || 'light'; } catch (_) {}
+        const dark = preference === 'dark' || (preference === 'system' && media.matches);
+        document.documentElement.classList.toggle('dark', dark);
+      };
+      applyTheme();
+      window.addEventListener('storage', event => {
+        if (event.key === 'app_theme' || event.key === null) applyTheme();
+      });
+      if (media.addEventListener) media.addEventListener('change', applyTheme);
+      else media.addListener(applyTheme);
+    })();
+  </script>
+</body>
+</html>
